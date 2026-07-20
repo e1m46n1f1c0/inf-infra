@@ -32,12 +32,12 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.tier=global" # Se anuncia al líder global
-      # Router HTTP (Puerto 80) para tráfico/redirección
-      - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.rule=HostRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)"
+      # Router HTTP (Puerto 80) para tráfico/redirección (Dominio raíz y subdominios)
+      - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.rule=Host(`${CLIENT_DOMAIN}`) || HostRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)"
       - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.entrypoints=web"
       - "traefik.http.services.router-http-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=80"
       # Router TCP TLS Passthrough (Puerto 443) para pasar TLS sin descifrar
-      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.rule=HostSNIRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)"
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.rule=HostSNI(`${CLIENT_DOMAIN}`) || HostSNIRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)"
       - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.entrypoints=websecure"
       - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.tls.passthrough=true"
       - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.service=service-https-${COMPOSE_PROJECT_NAME}"
