@@ -1,2 +1,13 @@
+# Environment files
 .env
+
+# Local SSL Certificates (mkcert)
+certs/*
+!certs/.gitkeep
+
+# Let's Encrypt / ACME storage
+letsencrypt/
+
+# OS files
 .DS_Store
+*.log

@@ -7,23 +7,41 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=private-network-${COMPOSE_PROJECT_NAME}"
-      # NUEVO: Filtro para leer solo apps internas
+      # Filtro para leer solo apps internas
       - "--providers.docker.constraints=Label(`traefik.tier`,`internal`)"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      # Proveedor de archivos dinámico (Certificados mkcert en local)
+      - "--providers.file.filename=/etc/traefik/dynamic-conf.yml"
+      - "--providers.file.watch=true"
+      # Resolver de Let's Encrypt (Producción / En línea)
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@ideasfarm.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./certs:/certs:ro
+      - ./dynamic-conf.yml:/etc/traefik/dynamic-conf.yml:ro
+      - ./letsencrypt:/letsencrypt
     networks:
       - global-transit-network
       - private-network
     labels:
       - "traefik.enable=true"
-      - "traefik.tier=global"
-      # Route all subdomains of this client here
-      - "traefik.http.routers.router-${COMPOSE_PROJECT_NAME}.rule=HostRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)"
-      # NUEVO: Escuchar en puerto seguro y habilitar TLS
-      - "traefik.http.routers.router-${COMPOSE_PROJECT_NAME}.entrypoints=websecure"
-      - "traefik.http.routers.router-${COMPOSE_PROJECT_NAME}.tls=true"
-      - "traefik.http.routers.router-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-}"
-      - "traefik.http.services.router-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=80"
+      - "traefik.tier=global" # Se anuncia al líder global
+      # Router HTTP (Puerto 80) para tráfico/redirección
+      - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.rule=HostRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)"
+      - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.entrypoints=web"
+      - "traefik.http.services.router-http-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=80"
+      # Router TCP TLS Passthrough (Puerto 443) para pasar TLS sin descifrar
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.rule=HostSNIRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)"
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.entrypoints=websecure"
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.tls.passthrough=true"
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.service=service-https-${COMPOSE_PROJECT_NAME}"
+      - "traefik.tcp.services.service-https-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=443"
       - "traefik.docker.network=global-transit-network"
 
 networks:
