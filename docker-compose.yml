@@ -1,0 +1,24 @@
+services:
+  traefik-internal:
+    image: traefik:v3.0
+    container_name: traefik-internal-${COMPOSE_PROJECT_NAME}
+    restart: always
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+    networks:
+      - global-transit-network
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      # Route all subdomains of this client here
+      - "traefik.http.routers.router-${COMPOSE_PROJECT_NAME}.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.services.router-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=80"
+      # Network configuration
+      - "traefik.docker.network=global-transit-network"
+
+networks:
+  global-transit-network:
+    external: true
+  private-network:
+    name: private-network-${COMPOSE_PROJECT_NAME} # Created automatically for internal modules
