@@ -27,8 +27,21 @@ services:
       - ./dynamic-conf.yml:/etc/traefik/dynamic-conf.yml:ro
       - ./letsencrypt:/letsencrypt
     networks:
-      - global-transit-network
-      - private-network
+      global-transit-network: {}
+      private-network:
+        aliases:
+          - dev.${CLIENT_DOMAIN}
+          - alpha.${CLIENT_DOMAIN}
+          - beta.${CLIENT_DOMAIN}
+          - ${CLIENT_DOMAIN}
+          - dev-login.${CLIENT_DOMAIN}
+          - alpha-login.${CLIENT_DOMAIN}
+          - beta-login.${CLIENT_DOMAIN}
+          - login.${CLIENT_DOMAIN}
+          - dev-app.${CLIENT_DOMAIN}
+          - alpha-app.${CLIENT_DOMAIN}
+          - beta-app.${CLIENT_DOMAIN}
+          - app.${CLIENT_DOMAIN}
     labels:
       - "traefik.enable=true"
       - "traefik.tier=global" # Se anuncia al líder global
@@ -44,8 +57,51 @@ services:
       - "traefik.tcp.services.service-https-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=443"
       - "traefik.docker.network=global-transit-network"
 
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-${COMPOSE_PROJECT_NAME}
+    restart: always
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_password}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    networks:
+      - private-network
+
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb-${COMPOSE_PROJECT_NAME}
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-demo}
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      private-network:
+        aliases:
+          - dev-gramedia.${CLIENT_DOMAIN}
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: redis-${COMPOSE_PROJECT_NAME}
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD:-demo}
+    volumes:
+      - redis-data:/data
+    networks:
+      - private-network
+
 networks:
   global-transit-network:
     external: true
   private-network:
     name: private-network-${COMPOSE_PROJECT_NAME}
+
+volumes:
+  mysql-data:
+  mongo-data:
+  redis-data:
