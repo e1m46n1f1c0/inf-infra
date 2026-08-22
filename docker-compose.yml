@@ -9,6 +9,7 @@ services:
       - "--providers.docker.network=private-network-${COMPOSE_PROJECT_NAME}"
       # Filtro para leer solo apps internas
       - "--providers.docker.constraints=Label(`traefik.tier`,`internal`)"
+      - "--api.dashboard=true"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
@@ -19,8 +20,11 @@ services:
       # Resolver de Let's Encrypt (Producción / En línea)
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@ideasfarm.com}"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    environment:
+      - CLIENT_DOMAIN=${CLIENT_DOMAIN}
+      - TRAEFIK_DASHBOARD_AUTH=${TRAEFIK_DASHBOARD_AUTH}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./certs:/certs:ro
@@ -30,17 +34,8 @@ services:
       global-transit-network: {}
       private-network:
         aliases:
-          - dev.${CLIENT_DOMAIN}
-          - alpha.${CLIENT_DOMAIN}
-          - beta.${CLIENT_DOMAIN}
           - ${CLIENT_DOMAIN}
-          - dev-login.${CLIENT_DOMAIN}
-          - alpha-login.${CLIENT_DOMAIN}
-          - beta-login.${CLIENT_DOMAIN}
           - login.${CLIENT_DOMAIN}
-          - dev-app.${CLIENT_DOMAIN}
-          - alpha-app.${CLIENT_DOMAIN}
-          - beta-app.${CLIENT_DOMAIN}
           - app.${CLIENT_DOMAIN}
     labels:
       - "traefik.enable=true"
@@ -80,10 +75,10 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-demo}
     volumes:
       - mongo-data:/data/db
+    ports:
+      - "127.0.0.1:27017:27017"
     networks:
-      private-network:
-        aliases:
-          - dev-gramedia.${CLIENT_DOMAIN}
+      - private-network
 
   redis:
     image: redis:7.0-alpine
@@ -95,6 +90,118 @@ services:
     networks:
       - private-network
 
+  mailpit:
+    image: axllent/mailpit:v1.21
+    profiles: ["local", "dev"]
+    container_name: mailpit-${COMPOSE_PROJECT_NAME}
+    restart: always
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE_FILE: /data/mailpit.db
+    volumes:
+      - mailpit-data:/data
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.rule=Host(`mail.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.services.mailpit-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8025"
+
+  dbgate:
+    image: dbgate/dbgate:latest
+    profiles: ["local", "dev"]
+    container_name: dbgate-${COMPOSE_PROJECT_NAME}
+    restart: always
+    environment:
+      CONNECTIONS: mysql,mongodb,redis
+      LABEL_mysql: "MySQL Local"
+      SERVER_mysql: "mysql"
+      USER_mysql: "dbadmin"
+      PASSWORD_mysql: "${DB_ROOT_PASSWORD:-root_password}"
+      PORT_mysql: "3306"
+      ENGINE_mysql: "mysql@dbgate-plugin-mysql"
+      LABEL_mongodb: "MongoDB Local"
+      SERVER_mongodb: "mongodb"
+      USER_mongodb: "${MONGO_ROOT_USER:-admin}"
+      PASSWORD_mongodb: "${MONGO_ROOT_PASSWORD:-demo}"
+      PORT_mongodb: "27017"
+      ENGINE_mongodb: "mongo@dbgate-plugin-mongo"
+      LABEL_redis: "Redis Local"
+      SERVER_redis: "redis"
+      PASSWORD_redis: "${REDIS_PASSWORD:-demo}"
+      PORT_redis: "6379"
+      ENGINE_redis: "redis@dbgate-plugin-redis"
+    volumes:
+      - dbgate-data:/root/.dbgate
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.rule=Host(`db.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.services.dbgate-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=3000"
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    profiles: ["local", "dev"]
+    container_name: minio-${COMPOSE_PROJECT_NAME}
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password123}
+    volumes:
+      - minio-data:/data
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.rule=Host(`s3-console.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.service=minio-console-${COMPOSE_PROJECT_NAME}"
+      - "traefik.http.services.minio-console-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=9001"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.rule=Host(`s3.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.service=minio-api-${COMPOSE_PROJECT_NAME}"
+      - "traefik.http.services.minio-api-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=9000"
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.1.1
+    profiles: ["local", "dev", "prod"]
+    container_name: evolution-api-${COMPOSE_PROJECT_NAME}
+    restart: always
+    environment:
+      - SERVER_URL=https://whatsapp.${CLIENT_DOMAIN}
+      - AUTHENTICATION_API_KEY=${WA_API_KEY:-secret_api_key_123}
+      # Base de Datos requerida por Evolution API v2
+      - DATABASE_PROVIDER=mysql
+      - DATABASE_CONNECTION_URI=mysql://evolution:evolution_pass@mysql:3306/evolution
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
+      # Integración con tu Redis local
+      - REDIS_ENABLED=true
+      - REDIS_URI=redis://:${REDIS_PASSWORD:-demo}@redis:6379/1
+      # Configuración de interfaz web y logs
+      - AUTHENTICATION_TYPE=apikey
+    volumes:
+      - evolution-instances:/element/instances
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.rule=Host(`whatsapp.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.services.evolution-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8080"
+
 networks:
   global-transit-network:
     external: true
@@ -105,3 +212,7 @@ volumes:
   mysql-data:
   mongo-data:
   redis-data:
+  mailpit-data:
+  dbgate-data:
+  minio-data:
+  evolution-instances:

@@ -11,3 +11,6 @@ letsencrypt/
 # OS files
 .DS_Store
 *.log
+
+# Backups
+backups/

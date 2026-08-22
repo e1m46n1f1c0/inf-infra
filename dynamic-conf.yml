@@ -1,9 +1,24 @@
+http:
+  routers:
+    dashboard-internal:
+      rule: 'Host(`traefik.{{ env "CLIENT_DOMAIN" }}`)'
+      service: "api@internal"
+      middlewares:
+        - "auth-dashboard"
+      tls: true
+
+  middlewares:
+    auth-dashboard:
+      basicAuth:
+        users:
+          - '{{ env "TRAEFIK_DASHBOARD_AUTH" }}'
+
 tls:
   stores:
     default:
       defaultCertificate:
-        certFile: "/certs/ideasfarm.local.crt"
-        keyFile: "/certs/ideasfarm.local.key"
+        certFile: "/certs/wildcard.localhost.crt"
+        keyFile: "/certs/wildcard.localhost.key"
   certificates:
-    - certFile: "/certs/ideasfarm.local.crt"
-      keyFile: "/certs/ideasfarm.local.key"
+    - certFile: "/certs/wildcard.localhost.crt"
+      keyFile: "/certs/wildcard.localhost.key"
