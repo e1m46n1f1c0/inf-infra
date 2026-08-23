@@ -14,7 +14,7 @@ FILE_PATH="$3"
 COL_NAME="$4"
 
 if [ -z "$TYPE" ] || [ -z "$DB_NAME" ] || [ -z "$FILE_PATH" ]; then
-    echo "Uso: $0 <mysql|mongo> <nombre_db> <ruta_archivo> [<coleccion_para_json>]"
+    echo "Uso: $0 <mysql|postgres|mongo> <nombre_db> <ruta_archivo> [<coleccion_para_json>]"
     exit 1
 fi
 
@@ -24,8 +24,11 @@ if [ ! -f "$FILE_PATH" ]; then
 fi
 
 MYSQL_CONTAINER="mysql-${COMPOSE_PROJECT_NAME:-example}"
+POSTGRES_CONTAINER="postgres-${COMPOSE_PROJECT_NAME:-example}"
 MONGO_CONTAINER="mongodb-${COMPOSE_PROJECT_NAME:-example}"
 MYSQL_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-root}"
+POSTGRES_USER="${POSTGRES_USER:-postgres}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-root_password}"
 MONGO_ROOT_USER="${MONGO_ROOT_USER:-admin}"
 MONGO_ROOT_PASSWORD="${MONGO_ROOT_PASSWORD:-root}"
 
@@ -39,6 +42,25 @@ if [ "$TYPE" = "mysql" ]; then
         docker exec -i "$MYSQL_CONTAINER" mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" < "$FILE_PATH"
     fi
     echo "✅ Importación MySQL completada con éxito."
+
+elif [ "$TYPE" = "postgres" ] || [ "$TYPE" = "postgresql" ]; then
+    echo "⏳ Importando a PostgreSQL ($DB_NAME) desde '$FILE_PATH'..."
+    # Crear base de datos si no existe
+    docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -tc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 || \
+    docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -c "CREATE DATABASE \"$DB_NAME\";" 2>/dev/null || true
+
+    if [[ "$FILE_PATH" == *.gz ]]; then
+        gunzip -c "$FILE_PATH" | docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$DB_NAME"
+    elif [[ "$FILE_PATH" == *.zip ]]; then
+        unzip -p "$FILE_PATH" | docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$DB_NAME"
+    elif [[ "$FILE_PATH" == *.dump ]] || [[ "$FILE_PATH" == *.custom ]]; then
+        docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" pg_restore -U "$POSTGRES_USER" -d "$DB_NAME" --no-owner --clean --if-exists < "$FILE_PATH" || \
+        docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$DB_NAME" < "$FILE_PATH"
+    else
+        docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$DB_NAME" < "$FILE_PATH"
+    fi
+    echo "✅ Importación PostgreSQL completada con éxito."
+
 
 elif [ "$TYPE" = "mongo" ]; then
     echo "⏳ Importando a MongoDB ($DB_NAME) desde '$FILE_PATH'..."

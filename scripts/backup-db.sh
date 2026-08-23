@@ -61,13 +61,17 @@ mkdir -p "$TEMP_DIR"
 
 # Nombres de contenedores y credenciales
 MYSQL_CONTAINER="mysql-${COMPOSE_PROJECT_NAME:-example}"
+POSTGRES_CONTAINER="postgres-${COMPOSE_PROJECT_NAME:-example}"
 MONGO_CONTAINER="mongodb-${COMPOSE_PROJECT_NAME:-example}"
 MYSQL_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-root}"
+POSTGRES_USER="${POSTGRES_USER:-postgres}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-root_password}"
 MONGO_ROOT_USER="${MONGO_ROOT_USER:-admin}"
 MONGO_ROOT_PASSWORD="${MONGO_ROOT_PASSWORD:-root}"
 
 # Listado de bases de datos procesadas para el reporte
 MYSQL_DBS_BACKED_UP=""
+POSTGRES_DBS_BACKED_UP=""
 MONGO_DBS_BACKED_UP=""
 ERROR_MSG=""
 
@@ -211,7 +215,35 @@ else
 fi
 
 # =================================================================
-# 3. CARGA A DIGITALOCEAN SPACES
+# 3. RESPALDO POSTGRESQL (POR BASE DE DATOS)
+# =================================================================
+echo "🐳 Iniciando respaldos de PostgreSQL..."
+if ! docker ps -q -f name="^${POSTGRES_CONTAINER}$" > /dev/null; then
+    echo "ℹ️ Contenedor PostgreSQL ($POSTGRES_CONTAINER) no encontrado o no en ejecución."
+else
+    # Obtener lista de bases de datos
+    pg_dbs=$(docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname NOT IN ('postgres');" 2>/dev/null || true)
+    
+    if [ -n "$pg_dbs" ]; then
+        for db in $pg_dbs; do
+            echo "  📦 Respaldando base de datos PostgreSQL: $db"
+            sql_file="postgres_db_${db}_${TIMESTAMP}.sql"
+            tar_file="postgres_db_${db}_${TIMESTAMP}.tar.gz"
+            
+            if docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" pg_dump -U "$POSTGRES_USER" "$db" > "$TEMP_DIR/$sql_file" 2>/dev/null; then
+                tar -czf "$BACKUP_DIR/$tar_file" -C "$TEMP_DIR" "$sql_file"
+                rm -f "$TEMP_DIR/$sql_file"
+                POSTGRES_DBS_BACKED_UP="$POSTGRES_DBS_BACKED_UP\n- $db ($(du -sh "$BACKUP_DIR/$tar_file" | cut -f1))"
+            else
+                echo "  ❌ Falló el respaldo de PostgreSQL: $db"
+                ERROR_MSG="${ERROR_MSG:+$ERROR_MSG\n}Falló dump de base de datos PostgreSQL '$db'."
+            fi
+        done
+    fi
+fi
+
+# =================================================================
+# 4. CARGA A DIGITALOCEAN SPACES
 # =================================================================
 SPACES_CONFIGURED=true
 for var in SPACES_KEY SPACES_SECRET SPACES_BUCKET SPACES_ENDPOINT SPACES_REGION; do
@@ -256,7 +288,7 @@ else
 fi
 
 # =================================================================
-# 4. POLÍTICA DE RETENCIÓN EN DIGITALOCEAN SPACES
+# 5. POLÍTICA DE RETENCIÓN EN DIGITALOCEAN SPACES
 # =================================================================
 if [ "$SPACES_CONFIGURED" = "true" ] && [ "$UPLOAD_SUCCESS" = "true" ]; then
     echo "🧹 Aplicando política de retención en DigitalOcean Spaces..."
@@ -302,12 +334,15 @@ if [ "$SPACES_CONFIGURED" = "true" ] && [ "$UPLOAD_SUCCESS" = "true" ]; then
 fi
 
 # =================================================================
-# 5. INFORME / NOTIFICACIÓN Y LIMPIEZA
+# 6. INFORME / NOTIFICACIÓN Y LIMPIEZA
 # =================================================================
 # Formatear el reporte de detalles
 REPORT=""
 if [ -n "$MYSQL_DBS_BACKED_UP" ]; then
     REPORT="$REPORT**MySQL:**$MYSQL_DBS_BACKED_UP\n"
+fi
+if [ -n "$POSTGRES_DBS_BACKED_UP" ]; then
+    REPORT="$REPORT**PostgreSQL:**$POSTGRES_DBS_BACKED_UP\n"
 fi
 if [ -n "$MONGO_DBS_BACKED_UP" ]; then
     REPORT="$REPORT**MongoDB:**$MONGO_DBS_BACKED_UP\n"

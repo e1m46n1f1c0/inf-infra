@@ -31,9 +31,9 @@ while true; do
   i=$((i + 1))
 done
 
-# Crear usuario 'dbadmin' para que DBGate pueda conectarse en local/dev
-if [[ "${COMPOSE_PROFILES:-}" == *"local"* ]] || [[ "${COMPOSE_PROFILES:-}" == *"dev"* ]]; then
-  echo "🔧 Entorno local detectado. Creando usuario 'dbadmin' para DBGate..."
+# Crear usuario 'dbadmin' para que DBGate pueda conectarse en local/dev/tools
+if [[ "${COMPOSE_PROFILES:-}" =~ (local|dev|tools|dbgate) ]]; then
+  echo "🔧 Herramientas de administración detectadas. Creando usuario 'dbadmin' para DBGate..."
   mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "
     CREATE USER IF NOT EXISTS 'dbadmin'@'%' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
     GRANT ALL PRIVILEGES ON *.* TO 'dbadmin'@'%' WITH GRANT OPTION;

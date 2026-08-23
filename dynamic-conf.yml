@@ -1,24 +1,32 @@
 http:
   routers:
     dashboard-internal:
-      rule: 'Host(`traefik.{{ env "CLIENT_DOMAIN" }}`)'
+      rule: 'Host(`{{ env "SUBDOMAIN_TRAEFIK" | default "traefik-internal" }}.{{ env "CLIENT_DOMAIN" }}`)'
       service: "api@internal"
       middlewares:
+        - "redirect-dashboard-internal"
         - "auth-dashboard"
       tls: true
 
   middlewares:
+    redirect-dashboard-internal:
+      redirectRegex:
+        regex: "^(https?://[^/]+)/?$"
+        replacement: "${1}/dashboard/"
+        permanent: true
+
     auth-dashboard:
       basicAuth:
         users:
           - '{{ env "TRAEFIK_DASHBOARD_AUTH" }}'
 
-tls:
-  stores:
-    default:
-      defaultCertificate:
-        certFile: "/certs/wildcard.localhost.crt"
-        keyFile: "/certs/wildcard.localhost.key"
-  certificates:
-    - certFile: "/certs/wildcard.localhost.crt"
-      keyFile: "/certs/wildcard.localhost.key"
+# Para desarrollo local con mkcert (descomentar solo si generas certificados en /certs/):
+# tls:
+#   stores:
+#     default:
+#       defaultCertificate:
+#         certFile: "/certs/wildcard.localhost.crt"
+#         keyFile: "/certs/wildcard.localhost.key"
+#   certificates:
+#     - certFile: "/certs/wildcard.localhost.crt"
+#       keyFile: "/certs/wildcard.localhost.key"
