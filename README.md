@@ -1,36 +1,62 @@
-# Infra Local Example (Entorno de Desarrollo e Infraestructura)
+# 🚀 Client Infrastructure Stack (inf-infra)
 
-Orquestación interna e infraestructura para proyectos y clientes con múltiples repositorios. Despliega el proxy interno Traefik, aprovisiona redes privadas aisladas (`private-network-${COMPOSE_PROJECT_NAME}`), bases de datos con persistencia en disco, servidor de WebSockets en tiempo real y herramientas de desarrollo local o producción.
+Stack modular de infraestructura y servicios aislados por cliente/dominio. Integra proxy inverso **Traefik v3**, bases de datos (PostgreSQL 16, MySQL 8, MongoDB 7, Redis 7 con persistencia AOF), WebSockets en tiempo real (**Centrifugo**), almacenamiento de objetos compatible con S3 (**MinIO**), pasarela de mensajería (**Evolution API**) y herramientas de observabilidad local.
+
+---
+
+## 🏛️ Arquitectura
+
+```mermaid
+graph TD
+    Leader[🌐 Traefik Global Leader] -- "TLS Passthrough (443)" --> TI[Traefik Interno Cliente]
+
+    subgraph "Core Stack (Siempre Activo)"
+        TI --> DASH_I[traefik-internal.domain.com - Dashboard]
+        TI --> PG[(PostgreSQL 16 :5432)]
+        TI --> MY[(MySQL 8.0 :3306)]
+        TI --> MO[(MongoDB 7.0 :27017)]
+        TI --> RD[(Redis 7.0 + AOF :6379)]
+    end
+
+    subgraph "Perfiles Opcionales (COMPOSE_PROFILES)"
+        TI --> WA[whatsapp.domain.com - Evolution API :8080]
+        TI --> RT[realtime.domain.com - Centrifugo :8000]
+        TI --> S3_API[s3.domain.com - MinIO API :9000]
+        TI --> S3_UI[s3-console.domain.com - MinIO Console :9001]
+        TI --> MAIL[mail.domain.com - Mailpit :8025]
+        TI --> REDIS_UI[redis.domain.com - RedisInsight :5540]
+        TI --> QUEUES[queues.domain.com - Bull-Board :3000]
+        TI --> DB_UI[db.domain.com - DbGate :3000]
+    end
+```
 
 ---
 
 ## 🛠 Servicios y Herramientas Integradas
 
-El stack base (núcleo) se inicia siempre por defecto, mientras que las herramientas opcionales se controlan mediante la variable `COMPOSE_PROFILES` en tu `.env` o comandos en el `Makefile`.
-
-| Servicio / Herramienta | Perfil / Activación | URL por Defecto (Configurable en `.env`) | Credenciales por Defecto | Descripción |
-| :--- | :--- | :--- | :--- | :--- |
-| **Traefik Interno** | *(Core - Siempre activo)* | `https://${SUBDOMAIN_TRAEFIK:-traefik}.<dominio>/dashboard/` | `admin` / *(Definido en `.env`)* | Proxy interno conectado a `global-transit-network`. |
-| **PostgreSQL (DB)** | *(Core - Siempre activo)* | `postgres:5432` *(Interno)* | `postgres` / `${POSTGRES_PASSWORD}` | Motor de base de datos relacional PostgreSQL 16. |
-| **MySQL (DB)** | *(Core - Siempre activo)* | `mysql:3306` *(Interno)* | `root` / `${DB_ROOT_PASSWORD}` | Motor de base de datos relacional MySQL 8.0. |
-| **MongoDB (DB)** | *(Core - Siempre activo)* | `mongodb:27017` *(Interno)* | `admin` / `${MONGO_ROOT_PASSWORD}` | Motor de base de datos NoSQL MongoDB 7.0. |
-| **Redis (DB + Colas)** | *(Core - Siempre activo)* | `redis:6379` *(Interno)* | *(Pass)* `${REDIS_PASSWORD}` | Caché y Colas en memoria con persistencia AOF en disco. |
-| **Centrifugo (Realtime)** | `dev`, `local`, `realtime`, `centrifugo` | `https://${SUBDOMAIN_CENTRIFUGO:-realtime}.<dominio>` | `admin` / `${CENTRIFUGO_ADMIN_PASSWORD}` | Servidor de WebSockets, SSE y canales Pub/Sub. |
-| **RedisInsight** | `dev`, `local`, `tools`, `redisinsight` | `https://${SUBDOMAIN_REDISINSIGHT:-redis}.<dominio>` | *(Acceso Web)* | Panel de administración universal para Redis, Streams y Colas. |
-| **Bull-Board** | `dev`, `local`, `tools`, `queues` | `https://${SUBDOMAIN_QUEUES:-queues}.<dominio>` | *(Acceso Web)* | Panel visual de monitoreo y reintento de colas Bull / BullMQ (CLI oficial). |
-| **DbGate** | `dev`, `local`, `tools`, `dbgate` | `https://${SUBDOMAIN_DBGATE:-db}.<dominio>` | *(No requiere login)* | Administrador web Todo-en-Uno (MySQL, Postgres, Mongo, Redis). |
-| **Mailpit** | `dev`, `local`, `tools`, `mail` | `https://${SUBDOMAIN_MAILPIT:-mail}.<dominio>` | *(No requiere login)* | Servidor SMTP y visor web de correos para pruebas. |
-| **MinIO (S3)** | `dev`, `local`, `s3`, `minio` | `https://${SUBDOMAIN_MINIO_CONSOLE:-s3-console}.<dominio>` | `${MINIO_ROOT_USER}` / `${MINIO_ROOT_PASSWORD}` | Almacenamiento de objetos S3 compatible (API en `s3.<dominio>`). |
-| **Evolution API** | `dev`, `local`, `whatsapp`, `evolution` | `https://${SUBDOMAIN_EVOLUTION:-whatsapp}.<dominio>` | *(API Key)* `${WA_API_KEY}` | API de integración con WhatsApp. |
+| Servicio / Herramienta | Perfil / Activación | URL por Defecto (Configurable en `.env`) | Descripción |
+| :--- | :--- | :--- | :--- |
+| **Traefik Interno** | *(Core)* | `https://traefik-internal.<dominio>/dashboard/` | Proxy interno con reglas de aislamiento multi-dominio. |
+| **PostgreSQL** | *(Core)* | `postgres:5432` *(Red interna)* | Motor relacional PostgreSQL 16. |
+| **MySQL** | *(Core)* | `mysql:3306` *(Red interna)* | Motor relacional MySQL 8.0 con scripts de auto-init. |
+| **MongoDB** | *(Core)* | `mongodb:27017` *(Red interna)* | Base de datos documental NoSQL MongoDB 7.0. |
+| **Redis (Cache & Colas)** | *(Core)* | `redis:6379` *(Red interna)* | Motor en memoria con persistencia en disco (AOF). |
+| **Centrifugo (Realtime)** | `realtime`, `dev` | `https://realtime.<dominio>` | Servidor escalable de WebSockets y eventos Pub/Sub. |
+| **Evolution API** | `whatsapp`, `dev` | `https://whatsapp.<dominio>` | Pasarela REST API para automatización de WhatsApp. |
+| **MinIO (S3 API & Console)**| `s3`, `minio`, `dev` | `https://s3.<dominio>` / `https://s3-console.<dominio>` | Almacenamiento de objetos S3 compatible. |
+| **DbGate** | `dbgate`, `tools`, `dev` | `https://db.<dominio>` | Administrador web moderno para SQL, Postgres, Mongo y Redis. |
+| **RedisInsight** | `redisinsight`, `tools`, `dev` | `https://redis.<dominio>` | Visualizador gráfico de claves, Streams y memoria de Redis. |
+| **Bull-Board** | `queues`, `tools`, `dev` | `https://queues.<dominio>` | Panel de monitoreo e inspección de colas Bull / BullMQ. |
+| **Mailpit** | `mail`, `tools`, `dev` | `https://mail.<dominio>` | Servidor SMTP local y visor de correos capturados. |
 
 ---
 
-## 🌐 Subdominios Personalizables
+## 🌐 Subdominios Personalizables en `.env`
 
-Todos los subdominios son configurables en tu archivo `.env`:
+Todos los subdominios se pueden renombrar libremente sin alterar el código:
 
 ```bash
-SUBDOMAIN_TRAEFIK=traefik
+SUBDOMAIN_TRAEFIK=traefik-internal
 SUBDOMAIN_CENTRIFUGO=realtime
 SUBDOMAIN_REDISINSIGHT=redis
 SUBDOMAIN_QUEUES=queues
@@ -43,96 +69,74 @@ SUBDOMAIN_EVOLUTION=whatsapp
 
 ---
 
-## 🚀 Gestión Modular con `COMPOSE_PROFILES`
+## 🚀 Control de Servicios con `COMPOSE_PROFILES`
 
-En tu archivo `.env` puedes definir qué módulos opcionales deseas activar:
+En el archivo `.env`, define qué servicios opcionales se iniciarán con la variable `COMPOSE_PROFILES`:
 
 ```bash
-# Todo el stack completo de desarrollo
+# Iniciar todo el stack completo (desarrollo / pruebas integrales):
 COMPOSE_PROFILES=dev
 
-# Solo servidor de tiempo real (WebSockets)
+# Iniciar solo el servidor de WebSockets:
 COMPOSE_PROFILES=realtime
 
-# Tiempo real + Paneles de colas y datos
-COMPOSE_PROFILES=realtime,redisinsight,queues
+# Iniciar WebSockets + WhatsApp + Almacenamiento S3:
+COMPOSE_PROFILES=realtime,whatsapp,s3
 
-# Solo herramientas administrativas
+# Iniciar únicamente las herramientas administrativas:
 COMPOSE_PROFILES=tools
 
-# Solo el núcleo base (Traefik + Postgres + MySQL + Mongo + Redis con AOF)
+# Iniciar únicamente el núcleo base (Traefik + Bases de datos):
 COMPOSE_PROFILES=
 ```
 
-### Comandos de conveniencia con `make`:
+### Comandos directos con `Makefile`:
 
 ```bash
-make up               # Inicia según COMPOSE_PROFILES en .env
-make up PROFILES=s3   # Inicia módulos específicos al vuelo
-make up-dev           # Inicia todo el entorno de desarrollo
+make up               # Inicia según la variable COMPOSE_PROFILES de tu .env
+make up-dev           # Inicia todo el stack completo de desarrollo
 make up-realtime      # Inicia núcleo + Centrifugo (WebSockets)
 make up-tools         # Inicia herramientas administrativas (DbGate, Mailpit, RedisInsight, Bull-Board)
-make up-core          # Inicia únicamente las bases de datos y Traefik
-make up-all           # Inicia todos los servicios y perfiles
-make ps               # Estado de los contenedores
-make logs             # Logs en vivo
-make down             # Detiene el stack
+make up-core          # Inicia únicamente Traefik y las bases de datos
+make up PROFILES=s3   # Inicia perfiles específicos sobre la marcha
+make ps               # Inspecciona el estado de los contenedores
+make logs             # Muestra los logs en tiempo real
+make down             # Detiene el stack completo
 ```
-
----
-
-## ⚡ Conexión con Centrifugo (WebSockets & HTTP API)
-
-- **Endpoint WebSocket para Clientes (Frontend / Apps Móviles)**:
-  `wss://realtime.<dominio>/connection/websocket`
-- **Endpoint HTTP API para Backends (PHP, Python, Rust, Node)**:
-  - Externo: `https://realtime.<dominio>/api`
-  - Interno en Docker: `http://centrifugo:8000/api`
-  - Header de autenticación: `Authorization: apikey <CENTRIFUGO_API_KEY>`
 
 ---
 
 ## 💾 Importación y Respaldo de Bases de Datos
 
+### Importación Rápida de Datos
 ```bash
-# Importar a MySQL (.sql, .sql.gz, .zip)
+# MySQL (.sql, .sql.gz, .zip)
 make import-mysql <nombre_db> <ruta_archivo>
 
-# Importar a PostgreSQL (.sql, .sql.gz, .zip, .dump)
+# PostgreSQL (.sql, .sql.gz, .zip, .dump, .custom)
 make import-postgres <nombre_db> <ruta_archivo>
 
-# Importar a MongoDB (.json, .json.gz, .zip, .archive)
-make import-mongo <nombre_db> <ruta_archivo> [<nombre_coleccion>]
+# MongoDB (.json, .json.gz, .zip, .archive)
+make import-mongo <nombre_db> <ruta_archivo> [<coleccion>]
+```
 
+### Respaldos y Sincronización S3 (DigitalOcean Spaces / MinIO)
+```bash
 # Ejecutar respaldo manual
 make backup TYPE=daily
 
-# Registrar cron jobs de respaldo automático
+# Configurar tareas cron de respaldo automatizado
 make setup-cron
 ```
 
 ---
 
-## 🔒 Configuración de SSL Local (mkcert)
+## 🛡️ Despliegue en Producción y Cloudflare Zero Trust
 
-Para desarrollo local (`.localhost`), se utilizan certificados generados con `mkcert`:
-
-1. **Instalar mkcert**:
+1. **Red Externa**: Asegúrate de que `global-transit-network` esté creada:
    ```bash
-   sudo apt update && sudo apt install libnss3-tools
-   wget -O mkcert https://dl.filippo.io/mkcert/latest?for=linux/amd64
-   chmod +x mkcert
-   sudo mv mkcert /usr/local/bin/
+   docker network create global-transit-network || true
    ```
-
-2. **Generar CA y Certificados**:
-   ```bash
-   cd certs
-   mkcert -install
-   mkcert -cert-file wildcard.localhost.crt -key-file wildcard.localhost.key "*.example.localhost" "example.localhost"
-   ```
-
-3. **Reiniciar Traefik**:
-   ```bash
-   make restart
-   ```
+2. **Cloudflare Zero Trust**:
+   - Agrega la regla wildcard `*.tudominio.com` en Cloudflare Tunnel apuntando a `https://global-traefik-leader:443` con `No TLS Verify: true` y `Match SNI: true`.
+   - Crea aplicaciones en **Cloudflare Access** para proteger los subdominios sensibles (`traefik-internal`, `db`, `redis`, `queues`, `s3-console`) y políticas **Bypass** para los endpoints públicos (`whatsapp`, `realtime`, `s3`).
