@@ -1,4 +1,4 @@
-.PHONY: help setup up up-dev up-local up-all up-core up-tools up-realtime down logs ps restart backup setup-cron import-mysql import-postgres import-mongo
+.PHONY: help setup up up-dev up-local up-all up-core up-tools up-realtime up-whatsapp up-wa up-s3 up-minio down logs ps restart backup setup-cron import-mysql import-postgres import-mongo
 
 comma := ,
 PROFILE_FLAGS := $(if $(PROFILES),$(foreach p,$(subst $(comma), ,$(PROFILES)),--profile $(p)))
@@ -15,6 +15,8 @@ help:
 	@echo "  make up-dev               Inicia stack completo de desarrollo (perfil 'dev')"
 	@echo "  make up-local             Inicia stack local completo (perfil 'local')"
 	@echo "  make up-realtime          Inicia núcleo + Centrifugo (WebSockets / Tiempo Real)"
+	@echo "  make up-whatsapp          Inicia núcleo + Evolution API (WhatsApp API)"
+	@echo "  make up-s3                Inicia núcleo + MinIO S3 (Almacenamiento de Objetos)"
 	@echo "  make up-tools             Inicia herramientas (DbGate, Mailpit, RedisInsight, Bull-Board)"
 	@echo "  make up-core              Inicia SOLO el núcleo (Traefik, MySQL, Postgres, Mongo, Redis)"
 	@echo "  make up-all               Inicia TODOS los servicios y perfiles"
@@ -47,6 +49,18 @@ up-local:
 
 up-realtime:
 	docker compose --profile realtime up -d
+
+up-whatsapp:
+	docker compose --profile whatsapp up -d
+
+up-wa:
+	docker compose --profile whatsapp up -d
+
+up-s3:
+	docker compose --profile s3 up -d
+
+up-minio:
+	docker compose --profile s3 up -d
 
 up-tools:
 	docker compose --profile tools up -d
