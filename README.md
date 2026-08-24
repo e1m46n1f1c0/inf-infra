@@ -1,6 +1,6 @@
 # 🚀 Client Infrastructure Stack (inf-infra)
 
-Stack modular de infraestructura y servicios aislados por cliente/dominio. Integra proxy inverso **Traefik v3**, bases de datos (PostgreSQL 16, MySQL 8, MongoDB 7, Redis 7 con persistencia AOF), WebSockets en tiempo real (**Centrifugo**), almacenamiento de objetos compatible con S3 (**MinIO**), pasarela de mensajería (**Evolution API**) y herramientas de observabilidad local.
+Stack modular de infraestructura y servicios aislados por cliente/dominio. Integra proxy inverso **Traefik v3**, bases de datos (PostgreSQL 16, MySQL 8, MongoDB 7, Redis 7 con persistencia AOF), WebSockets en tiempo real (**Centrifugo**), almacenamiento de objetos compatible con S3 (**MinIO**), pasarela de mensajería (**Evolution API v2**) y herramientas de observabilidad local.
 
 ---
 
@@ -41,8 +41,8 @@ graph TD
 | **MySQL** | *(Core)* | `mysql:3306` *(Red interna)* | Motor relacional MySQL 8.0 con scripts de auto-init. |
 | **MongoDB** | *(Core)* | `mongodb:27017` *(Red interna)* | Base de datos documental NoSQL MongoDB 7.0. |
 | **Redis (Cache & Colas)** | *(Core)* | `redis:6379` *(Red interna)* | Motor en memoria con persistencia en disco (AOF). |
+| **Evolution API v2** | `whatsapp`, `dev` | `https://whatsapp.<dominio>` | Pasarela REST API para automatización de WhatsApp. |
 | **Centrifugo (Realtime)** | `realtime`, `dev` | `https://realtime.<dominio>` | Servidor escalable de WebSockets y eventos Pub/Sub. |
-| **Evolution API** | `whatsapp`, `dev` | `https://whatsapp.<dominio>` | Pasarela REST API para automatización de WhatsApp. |
 | **MinIO (S3 API & Console)**| `s3`, `minio`, `dev` | `https://s3.<dominio>` / `https://s3-console.<dominio>` | Almacenamiento de objetos S3 compatible. |
 | **DbGate** | `dbgate`, `tools`, `dev` | `https://db.<dominio>` | Administrador web moderno para SQL, Postgres, Mongo y Redis. |
 | **RedisInsight** | `redisinsight`, `tools`, `dev` | `https://redis.<dominio>` | Visualizador gráfico de claves, Streams y memoria de Redis. |
@@ -57,6 +57,7 @@ Todos los subdominios se pueden renombrar libremente sin alterar el código:
 
 ```bash
 SUBDOMAIN_TRAEFIK=traefik-internal
+SUBDOMAIN_EVOLUTION=whatsapp
 SUBDOMAIN_CENTRIFUGO=realtime
 SUBDOMAIN_REDISINSIGHT=redis
 SUBDOMAIN_QUEUES=queues
@@ -64,8 +65,45 @@ SUBDOMAIN_DBGATE=db
 SUBDOMAIN_MAILPIT=mail
 SUBDOMAIN_MINIO=s3
 SUBDOMAIN_MINIO_CONSOLE=s3-console
-SUBDOMAIN_EVOLUTION=whatsapp
 ```
+
+---
+
+## 💬 Uso de Evolution API v2 (WhatsApp REST API)
+
+### 1. Panel de Administración Web (Manager UI)
+Accede a la interfaz web para crear instancias, vincular números con código QR y configurar webhooks:
+- **URL**: `https://whatsapp.<dominio>/manager/`
+- **Autenticación**: Tu clave global `WA_API_KEY` definida en `.env`.
+
+### 2. Envío de Mensajes de Texto (`sendText`)
+Puedes enviar mensajes desde cualquier backend (PHP, Node, Python, Laravel) o terminal con cURL:
+
+```bash
+curl -X POST "https://whatsapp.<dominio>/message/sendText/<NOMBRE_INSTANCIA>" \
+  -H "Content-Type: application/json" \
+  -H "apikey: <TU_API_KEY>" \
+  -d '{
+    "number": "593997631577",
+    "text": "¡Hola! Mensaje enviado desde la API 🚀"
+  }'
+```
+
+> [!NOTE]
+> - El campo `number` debe incluir el código de país sin el signo `+` ni espacios (ej. `593997631577` para Ecuador).
+> - En `apikey` puedes usar la clave global (`WA_API_KEY`) o el token individual generado para esa instancia.
+> - La persistencia de las sesiones de WhatsApp y la caché en Redis están integradas automáticamente en los volúmenes `evolution-instances` y `evolution-store`.
+
+---
+
+## ⚡ Conexión con Centrifugo (WebSockets & Realtime)
+
+- **Endpoint WebSocket para Clientes (Frontend / Web / Mobile)**:
+  `wss://realtime.<dominio>/connection/websocket`
+- **Endpoint HTTP API para Backends**:
+  - Externo: `https://realtime.<dominio>/api`
+  - Interno en Docker: `http://centrifugo:8000/api`
+  - Header de autenticación: `Authorization: apikey <CENTRIFUGO_API_KEY>`
 
 ---
 
