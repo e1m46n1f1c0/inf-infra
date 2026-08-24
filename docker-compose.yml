@@ -205,13 +205,21 @@ services:
       - DATABASE_PROVIDER=postgresql
       - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-default_db}
       - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
-      # Integración con Redis local
-      - REDIS_ENABLED=true
-      - REDIS_URI=redis://:${REDIS_PASSWORD:-demo}@redis:6379/1
-      # Configuración de interfaz web y logs
+      # Integración con Redis Cache (Evolution API v2)
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://:${REDIS_PASSWORD:-demo}@redis:6379/1
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_REDIS_SAVE_INSTANCES=true
+      - CACHE_REDIS_SAVE_CHATS=true
+      - CACHE_REDIS_SAVE_MESSAGES=true
+      - CACHE_REDIS_SAVE_CONTACTS=true
+      - CACHE_REDIS_SAVE_STATUS=true
+      - CACHE_LOCAL_ENABLED=false
+      # Configuración de interfaz web y autenticación
       - AUTHENTICATION_TYPE=apikey
     volumes:
-      - evolution-instances:/element/instances
+      - evolution-instances:/evolution/instances
+      - evolution-store:/evolution/store
     networks:
       - private-network
     labels:
@@ -300,4 +308,5 @@ volumes:
   dbgate-data:
   minio-data:
   evolution-instances:
+  evolution-store:
   redisinsight-data:
