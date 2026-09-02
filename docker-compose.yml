@@ -14,18 +14,25 @@ services:
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--entrypoints.websecure.address=:443"
-      # Proveedor de archivos dinámico (Certificados mkcert en local)
-      - "--providers.file.filename=/etc/traefik/dynamic-conf.yml"
-      - "--providers.file.watch=true"
+      - "--entrypoints.websecure.http.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      # Resolver ACME Local (step-ca para entorno local)
+      - "--certificatesresolvers.local-acme.acme.caserver=https://step-ca:9000/acme/acme/directory"
+      - "--certificatesresolvers.local-acme.acme.httpchallenge=true"
+      - "--certificatesresolvers.local-acme.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.local-acme.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.local-acme.acme.storage=/letsencrypt/acme-local.json"
+      - "--serversTransport.insecureSkipVerify=true"
       # Resolver de Let's Encrypt (Producción / En línea)
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+
     environment:
       - CLIENT_DOMAIN=${CLIENT_DOMAIN}
       - TRAEFIK_DASHBOARD_AUTH=${TRAEFIK_DASHBOARD_AUTH}
       - SUBDOMAIN_TRAEFIK=${SUBDOMAIN_TRAEFIK:-traefik}
+      - CERT_RESOLVER=${CERT_RESOLVER:-local-acme}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./certs:/certs:ro
