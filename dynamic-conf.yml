@@ -20,13 +20,13 @@ http:
         users:
           - '{{ env "TRAEFIK_DASHBOARD_AUTH" }}'
 
-# Para desarrollo local con mkcert (descomentar solo si generas certificados en /certs/):
+# Para desarrollo local con mkcert:
 # tls:
 #   stores:
 #     default:
 #       defaultCertificate:
-#         certFile: "/certs/wildcard.localhost.crt"
-#         keyFile: "/certs/wildcard.localhost.key"
+#         certFile: "/certs/local-cert.pem"
+#         keyFile: "/certs/local-key.pem"
 #   certificates:
-#     - certFile: "/certs/wildcard.localhost.crt"
-#       keyFile: "/certs/wildcard.localhost.key"
+#     - certFile: "/certs/local-cert.pem"
+#       keyFile: "/certs/local-key.pem"
