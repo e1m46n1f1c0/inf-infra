@@ -1,7 +1,7 @@
 services:
   traefik-internal:
     image: traefik:v3.6
-    container_name: traefik-internal-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-traefik-internal
     restart: always
     command:
       - "--log.level=DEBUG"
@@ -63,7 +63,7 @@ services:
 
   mysql:
     image: mysql:8.0
-    container_name: mysql-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-mysql
     restart: always
     env_file:
       - .env
@@ -77,7 +77,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: postgres-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-postgres
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -90,7 +90,7 @@ services:
 
   mongodb:
     image: mongo:7.0
-    container_name: mongodb-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-mongodb
     restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
@@ -102,7 +102,7 @@ services:
 
   redis:
     image: redis:7.0-alpine
-    container_name: redis-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-redis
     restart: always
     command: redis-server --appendonly yes --appendfsync everysec --requirepass ${REDIS_PASSWORD:-demo}
     volumes:
@@ -113,7 +113,7 @@ services:
   mailpit:
     image: axllent/mailpit:v1.21
     profiles: ["local", "dev", "tools", "mail"]
-    container_name: mailpit-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-mailpit
     restart: always
     environment:
       MP_MAX_MESSAGES: 5000
@@ -134,7 +134,7 @@ services:
   dbgate:
     image: dbgate/dbgate:latest
     profiles: ["local", "dev", "tools", "dbgate"]
-    container_name: dbgate-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-dbgate
     restart: always
     environment:
       CONNECTIONS: mysql,mongodb,redis,postgres
@@ -177,7 +177,7 @@ services:
   minio:
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     profiles: ["local", "dev", "s3", "minio"]
-    container_name: minio-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-minio
     restart: always
     command: server /data --console-address ":9001"
     environment:
@@ -206,7 +206,7 @@ services:
   evolution-api:
     image: evoapicloud/evolution-api:latest
     profiles: ["local", "dev", "whatsapp", "evolution"]
-    container_name: evolution-api-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-evolution-api
     restart: always
     environment:
       - SERVER_URL=https://${SUBDOMAIN_EVOLUTION:-whatsapp}.${CLIENT_DOMAIN}
@@ -244,7 +244,7 @@ services:
   centrifugo:
     image: centrifugo/centrifugo:v5
     profiles: ["local", "dev", "realtime", "centrifugo"]
-    container_name: centrifugo-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-centrifugo
     restart: always
     environment:
       - CENTRIFUGO_TOKEN_HMAC_SECRET_KEY=${CENTRIFUGO_SECRET:-secret_centrifugo_token_key}
@@ -275,7 +275,7 @@ services:
   redisinsight:
     image: redis/redisinsight:latest
     profiles: ["local", "dev", "tools", "redisinsight", "redis-ui"]
-    container_name: redisinsight-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-redisinsight
     restart: always
     volumes:
       - redisinsight-data:/data
@@ -293,7 +293,7 @@ services:
   bull-board:
     image: node:20-alpine
     profiles: ["local", "dev", "tools", "bullboard", "queues"]
-    container_name: bull-board-${COMPOSE_PROJECT_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-bull-board
     restart: always
     command: npx -y @bull-board/cli --redis redis://:${REDIS_PASSWORD:-demo}@redis:6379 --host 0.0.0.0 --port 3000 --no-open
     networks:
