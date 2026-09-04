@@ -2,12 +2,14 @@ http:
   routers:
     dashboard-internal:
       rule: 'Host(`{{ env "SUBDOMAIN_TRAEFIK" | default "traefik-internal" }}.{{ env "CLIENT_DOMAIN" }}`)'
+      entryPoints:
+        - "websecure"
       service: "api@internal"
       middlewares:
         - "redirect-dashboard-internal"
         - "auth-dashboard"
-      tls: true
-
+      tls:
+        certResolver: '{{ env "CERT_RESOLVER" | default "local-acme" }}'
   middlewares:
     redirect-dashboard-internal:
       redirectRegex:
@@ -20,13 +22,4 @@ http:
         users:
           - '{{ env "TRAEFIK_DASHBOARD_AUTH" }}'
 
-# Para desarrollo local con mkcert:
-# tls:
-#   stores:
-#     default:
-#       defaultCertificate:
-#         certFile: "/certs/local-cert.pem"
-#         keyFile: "/certs/local-key.pem"
-#   certificates:
-#     - certFile: "/certs/local-cert.pem"
-#       keyFile: "/certs/local-key.pem"
+

@@ -4,7 +4,10 @@ services:
     container_name: traefik-internal-${COMPOSE_PROJECT_NAME}
     restart: always
     command:
+      - "--log.level=DEBUG"
       - "--providers.docker=true"
+      - "--providers.file.filename=/etc/traefik/dynamic-conf.yml"
+      - "--api.insecure=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=private-network-${COMPOSE_PROJECT_NAME}"
       # Filtro para leer solo apps internas
@@ -17,22 +20,20 @@ services:
       - "--entrypoints.websecure.http.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       # Resolver ACME Local (step-ca para entorno local)
       - "--certificatesresolvers.local-acme.acme.caserver=https://step-ca:9000/acme/acme/directory"
-      - "--certificatesresolvers.local-acme.acme.httpchallenge=true"
-      - "--certificatesresolvers.local-acme.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.local-acme.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.local-acme.acme.tlschallenge=true"
+      - "--certificatesresolvers.local-acme.acme.email=${ACME_EMAIL:-admin@localhost}"
       - "--certificatesresolvers.local-acme.acme.storage=/letsencrypt/acme-local.json"
-      - "--serversTransport.insecureSkipVerify=true"
       # Resolver de Let's Encrypt (Producción / En línea)
-      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
 
     environment:
+      - CERT_RESOLVER=${CERT_RESOLVER:-local-acme}
+      - LEGO_CA_CERTIFICATES
       - CLIENT_DOMAIN=${CLIENT_DOMAIN}
       - TRAEFIK_DASHBOARD_AUTH=${TRAEFIK_DASHBOARD_AUTH}
       - SUBDOMAIN_TRAEFIK=${SUBDOMAIN_TRAEFIK:-traefik}
-      - CERT_RESOLVER=${CERT_RESOLVER:-local-acme}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./certs:/certs:ro
@@ -96,8 +97,6 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-demo}
     volumes:
       - mongo-data:/data/db
-    ports:
-      - "127.0.0.1:27017:27017"
     networks:
       - private-network
 
@@ -129,6 +128,7 @@ services:
       - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_MAILPIT:-mail}.${CLIENT_DOMAIN}`)"
       - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
       - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       - "traefik.http.services.mailpit-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8025"
 
   dbgate:
@@ -171,6 +171,7 @@ services:
       - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_DBGATE:-db}.${CLIENT_DOMAIN}`)"
       - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
       - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       - "traefik.http.services.dbgate-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=3000"
 
   minio:
@@ -192,11 +193,13 @@ services:
       - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_MINIO_CONSOLE:-s3-console}.${CLIENT_DOMAIN}`)"
       - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
       - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.service=minio-console-${COMPOSE_PROJECT_NAME}"
       - "traefik.http.services.minio-console-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=9001"
       - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_MINIO:-s3}.${CLIENT_DOMAIN}`)"
       - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
       - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.service=minio-api-${COMPOSE_PROJECT_NAME}"
       - "traefik.http.services.minio-api-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=9000"
 
@@ -235,6 +238,7 @@ services:
       - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_EVOLUTION:-whatsapp}.${CLIENT_DOMAIN}`)"
       - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
       - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       - "traefik.http.services.evolution-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8080"
 
   centrifugo:
@@ -265,6 +269,7 @@ services:
       - "traefik.http.routers.centrifugo-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_CENTRIFUGO:-realtime}.${CLIENT_DOMAIN}`)"
       - "traefik.http.routers.centrifugo-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
       - "traefik.http.routers.centrifugo-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.centrifugo-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       - "traefik.http.services.centrifugo-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8000"
 
   redisinsight:
@@ -282,6 +287,7 @@ services:
       - "traefik.http.routers.redisinsight-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_REDISINSIGHT:-redis}.${CLIENT_DOMAIN}`)"
       - "traefik.http.routers.redisinsight-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
       - "traefik.http.routers.redisinsight-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.redisinsight-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       - "traefik.http.services.redisinsight-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=5540"
 
   bull-board:
@@ -298,6 +304,7 @@ services:
       - "traefik.http.routers.bull-board-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_QUEUES:-queues}.${CLIENT_DOMAIN}`)"
       - "traefik.http.routers.bull-board-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
       - "traefik.http.routers.bull-board-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.bull-board-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
       - "traefik.http.services.bull-board-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=3000"
 
 networks:

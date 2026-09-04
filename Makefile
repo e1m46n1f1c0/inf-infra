@@ -38,37 +38,42 @@ setup:
 	@echo "Configuring client infrastructure..."
 	@[ -f .env ] && echo "The .env file already exists." || cp .env.example .env
 
-up:
+fetch-certs:
+	@echo "Fetching Root CA from global-step-ca..."
+	@mkdir -p certs
+	@docker cp global-step-ca:/home/step/certs/root_ca.crt ./certs/root_ca.crt 2>/dev/null || echo "Warning: Could not fetch root_ca.crt from global-step-ca"
+
+up: fetch-certs
 	docker compose $(PROFILE_FLAGS) up -d
 
-up-dev:
+up-dev: fetch-certs
 	docker compose --profile dev up -d
 
-up-local:
+up-local: fetch-certs
 	docker compose --profile local up -d
 
-up-realtime:
+up-realtime: fetch-certs
 	docker compose --profile realtime up -d
 
-up-whatsapp:
+up-whatsapp: fetch-certs
 	docker compose --profile whatsapp up -d
 
-up-wa:
+up-wa: fetch-certs
 	docker compose --profile whatsapp up -d
 
-up-s3:
+up-s3: fetch-certs
 	docker compose --profile s3 up -d
 
-up-minio:
+up-minio: fetch-certs
 	docker compose --profile s3 up -d
 
-up-tools:
+up-tools: fetch-certs
 	docker compose --profile tools up -d
 
-up-core:
+up-core: fetch-certs
 	COMPOSE_PROFILES="" docker compose up -d
 
-up-all:
+up-all: fetch-certs
 	docker compose --profile local --profile dev --profile tools --profile s3 --profile minio --profile whatsapp --profile evolution --profile realtime --profile centrifugo --profile redisinsight --profile queues --profile bullboard up -d
 
 down:
