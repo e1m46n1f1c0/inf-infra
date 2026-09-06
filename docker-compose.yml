@@ -138,6 +138,8 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME}-dbgate
     restart: always
     environment:
+      LOGIN_USERNAME: "${DBGATE_USER:-admin}"
+      LOGIN_PASSWORD: "${DBGATE_PASSWORD:-admin123}"
       CONNECTIONS: mysql,mongodb,redis,postgres
       LABEL_mysql: "MySQL Local"
       SERVER_mysql: "mysql"
