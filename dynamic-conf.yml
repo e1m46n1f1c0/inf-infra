@@ -1,0 +1,25 @@
+http:
+  routers:
+    dashboard-internal:
+      rule: 'Host(`{{ env "SUBDOMAIN_TRAEFIK" | default "traefik-internal" }}.{{ env "CLIENT_DOMAIN" }}`)'
+      entryPoints:
+        - "websecure"
+      service: "api@internal"
+      middlewares:
+        - "redirect-dashboard-internal"
+        - "auth-dashboard"
+      tls:
+        certResolver: '{{ env "CERT_RESOLVER" | default "local-acme" }}'
+  middlewares:
+    redirect-dashboard-internal:
+      redirectRegex:
+        regex: "^(https?://[^/]+)/?$"
+        replacement: "${1}/dashboard/"
+        permanent: true
+
+    auth-dashboard:
+      basicAuth:
+        users:
+          - '{{ env "TRAEFIK_DASHBOARD_AUTH" }}'
+
+

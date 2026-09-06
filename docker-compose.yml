@@ -1,0 +1,326 @@
+services:
+  traefik-internal:
+    image: traefik:v3.6
+    container_name: ${COMPOSE_PROJECT_NAME}-traefik-internal
+    restart: always
+    command:
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--providers.file.filename=/etc/traefik/dynamic-conf.yml"
+      - "--api.insecure=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=private-network-${COMPOSE_PROJECT_NAME}"
+      # Filtro para leer solo apps internas
+      - "--providers.docker.constraints=Label(`traefik.tier`,`internal`)"
+      - "--api.dashboard=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      # Resolver ACME Local (step-ca para entorno local)
+      - "--certificatesresolvers.local-acme.acme.caserver=https://step-ca:9000/acme/acme/directory"
+      - "--certificatesresolvers.local-acme.acme.tlschallenge=true"
+      - "--certificatesresolvers.local-acme.acme.email=${ACME_EMAIL:-admin@localhost}"
+      - "--certificatesresolvers.local-acme.acme.storage=/letsencrypt/acme-local.json"
+      # Resolver de Let's Encrypt (Producción / En línea)
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+
+    environment:
+      - CERT_RESOLVER=${CERT_RESOLVER:-local-acme}
+      - LEGO_CA_CERTIFICATES
+      - CLIENT_DOMAIN=${CLIENT_DOMAIN}
+      - TRAEFIK_DASHBOARD_AUTH=${TRAEFIK_DASHBOARD_AUTH}
+      - SUBDOMAIN_TRAEFIK=${SUBDOMAIN_TRAEFIK:-traefik}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./certs:/certs:ro
+      - ./dynamic-conf.yml:/etc/traefik/dynamic-conf.yml:ro
+      - ./letsencrypt:/letsencrypt
+    networks:
+      global-transit-network: {}
+      private-network:
+        aliases:
+          - ${CLIENT_DOMAIN}
+          - login.${CLIENT_DOMAIN}
+          - app.${CLIENT_DOMAIN}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=global" # Se anuncia al líder global
+      # Router HTTP (Puerto 80) para tráfico/redirección (Dominio raíz y subdominios clientes)
+      - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.rule=(Host(`${CLIENT_DOMAIN}`) || HostRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)) && !Host(`obs.${CLIENT_DOMAIN}`) && !Host(`secrets.${CLIENT_DOMAIN}`) && !Host(`traefik.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.entrypoints=web"
+      - "traefik.http.services.router-http-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=80"
+      # Router TCP TLS Passthrough (Puerto 443) para pasar TLS sin descifrar hacia traefik-internal
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.rule=(HostSNI(`${CLIENT_DOMAIN}`) || HostSNIRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)) && !HostSNI(`obs.${CLIENT_DOMAIN}`) && !HostSNI(`secrets.${CLIENT_DOMAIN}`) && !HostSNI(`traefik.${CLIENT_DOMAIN}`)"
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.entrypoints=websecure"
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.tls.passthrough=true"
+      - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.service=service-https-${COMPOSE_PROJECT_NAME}"
+      - "traefik.tcp.services.service-https-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=443"
+      - "traefik.docker.network=global-transit-network"
+
+  mysql:
+    image: mysql:8.0
+    container_name: ${COMPOSE_PROJECT_NAME}-mysql
+    restart: always
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_password}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    networks:
+      - private-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root_password}
+      POSTGRES_DB: ${POSTGRES_DB:-default_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - private-network
+
+  mongodb:
+    image: mongo:7.0
+    container_name: ${COMPOSE_PROJECT_NAME}-mongodb
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-demo}
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - private-network
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-redis
+    restart: always
+    command: redis-server --appendonly yes --appendfsync everysec --requirepass ${REDIS_PASSWORD:-demo}
+    volumes:
+      - redis-data:/data
+    networks:
+      - private-network
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    profiles: ["local", "dev", "tools", "mail"]
+    container_name: ${COMPOSE_PROJECT_NAME}-mailpit
+    restart: always
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE_FILE: /data/mailpit.db
+    volumes:
+      - mailpit-data:/data
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_MAILPIT:-mail}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.mailpit-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      - "traefik.http.services.mailpit-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8025"
+
+  dbgate:
+    image: dbgate/dbgate:latest
+    profiles: ["local", "dev", "tools", "dbgate"]
+    container_name: ${COMPOSE_PROJECT_NAME}-dbgate
+    restart: always
+    environment:
+      CONNECTIONS: mysql,mongodb,redis,postgres
+      LABEL_mysql: "MySQL Local"
+      SERVER_mysql: "mysql"
+      USER_mysql: "dbadmin"
+      PASSWORD_mysql: "${DB_ROOT_PASSWORD:-root_password}"
+      PORT_mysql: "3306"
+      ENGINE_mysql: "mysql@dbgate-plugin-mysql"
+      LABEL_mongodb: "MongoDB Local"
+      SERVER_mongodb: "mongodb"
+      USER_mongodb: "${MONGO_ROOT_USER:-admin}"
+      PASSWORD_mongodb: "${MONGO_ROOT_PASSWORD:-demo}"
+      PORT_mongodb: "27017"
+      ENGINE_mongodb: "mongo@dbgate-plugin-mongo"
+      LABEL_redis: "Redis Local"
+      SERVER_redis: "redis"
+      PASSWORD_redis: "${REDIS_PASSWORD:-demo}"
+      PORT_redis: "6379"
+      ENGINE_redis: "redis@dbgate-plugin-redis"
+      LABEL_postgres: "PostgreSQL Local"
+      SERVER_postgres: "postgres"
+      USER_postgres: "${POSTGRES_USER:-postgres}"
+      PASSWORD_postgres: "${POSTGRES_PASSWORD:-root_password}"
+      PORT_postgres: "5432"
+      ENGINE_postgres: "postgres@dbgate-plugin-postgres"
+    volumes:
+      - dbgate-data:/root/.dbgate
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_DBGATE:-db}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.dbgate-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      - "traefik.http.services.dbgate-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=3000"
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    profiles: ["local", "dev", "s3", "minio"]
+    container_name: ${COMPOSE_PROJECT_NAME}-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password123}
+    volumes:
+      - minio-data:/data
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_MINIO_CONSOLE:-s3-console}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      - "traefik.http.routers.minio-console-${COMPOSE_PROJECT_NAME}.service=minio-console-${COMPOSE_PROJECT_NAME}"
+      - "traefik.http.services.minio-console-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=9001"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_MINIO:-s3}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      - "traefik.http.routers.minio-api-${COMPOSE_PROJECT_NAME}.service=minio-api-${COMPOSE_PROJECT_NAME}"
+      - "traefik.http.services.minio-api-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=9000"
+
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    profiles: ["local", "dev", "whatsapp", "evolution"]
+    container_name: ${COMPOSE_PROJECT_NAME}-evolution-api
+    restart: always
+    environment:
+      - SERVER_URL=https://${SUBDOMAIN_EVOLUTION:-whatsapp}.${CLIENT_DOMAIN}
+      - AUTHENTICATION_API_KEY=${WA_API_KEY:-secret_api_key_123}
+      # Base de Datos requerida por Evolution API v2 (PostgreSQL)
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-default_db}
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
+      # Integración con Redis Cache (Evolution API v2)
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://:${REDIS_PASSWORD:-demo}@redis:6379/1
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_REDIS_SAVE_INSTANCES=true
+      - CACHE_REDIS_SAVE_CHATS=true
+      - CACHE_REDIS_SAVE_MESSAGES=true
+      - CACHE_REDIS_SAVE_CONTACTS=true
+      - CACHE_REDIS_SAVE_STATUS=true
+      - CACHE_LOCAL_ENABLED=false
+      # Configuración de interfaz web y autenticación
+      - AUTHENTICATION_TYPE=apikey
+    volumes:
+      - evolution-instances:/evolution/instances
+      - evolution-store:/evolution/store
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_EVOLUTION:-whatsapp}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.evolution-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      - "traefik.http.services.evolution-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8080"
+
+  centrifugo:
+    image: centrifugo/centrifugo:v5
+    profiles: ["local", "dev", "realtime", "centrifugo"]
+    container_name: ${COMPOSE_PROJECT_NAME}-centrifugo
+    restart: always
+    environment:
+      - CENTRIFUGO_TOKEN_HMAC_SECRET_KEY=${CENTRIFUGO_SECRET:-secret_centrifugo_token_key}
+      - CENTRIFUGO_API_KEY=${CENTRIFUGO_API_KEY:-secret_centrifugo_api_key}
+      - CENTRIFUGO_ADMIN=true
+      - CENTRIFUGO_ADMIN_PASSWORD=${CENTRIFUGO_ADMIN_PASSWORD:-admin_password}
+      - CENTRIFUGO_ADMIN_SECRET=${CENTRIFUGO_ADMIN_SECRET:-admin_secret_key}
+      - CENTRIFUGO_ALLOWED_ORIGINS=*
+      - CENTRIFUGO_ALLOW_SUBSCRIBE_FOR_CLIENT=true
+      - CENTRIFUGO_PRESENCE=true
+      - CENTRIFUGO_HISTORY_SIZE=100
+      - CENTRIFUGO_HISTORY_TTL=300s
+      - CENTRIFUGO_ENGINE=redis
+      - CENTRIFUGO_REDIS_ADDRESS=redis:6379
+      - CENTRIFUGO_REDIS_PASSWORD=${REDIS_PASSWORD:-demo}
+      - CENTRIFUGO_REDIS_DB=2
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.centrifugo-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_CENTRIFUGO:-realtime}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.centrifugo-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.centrifugo-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.centrifugo-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      - "traefik.http.services.centrifugo-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=8000"
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    profiles: ["local", "dev", "tools", "redisinsight", "redis-ui"]
+    container_name: ${COMPOSE_PROJECT_NAME}-redisinsight
+    restart: always
+    volumes:
+      - redisinsight-data:/data
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.redisinsight-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_REDISINSIGHT:-redis}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.redisinsight-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.redisinsight-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.redisinsight-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      - "traefik.http.services.redisinsight-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=5540"
+
+  bull-board:
+    image: node:20-alpine
+    profiles: ["local", "dev", "tools", "bullboard", "queues"]
+    container_name: ${COMPOSE_PROJECT_NAME}-bull-board
+    restart: always
+    command: npx -y @bull-board/cli --redis redis://:${REDIS_PASSWORD:-demo}@redis:6379 --host 0.0.0.0 --port 3000 --no-open
+    networks:
+      - private-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tier=internal"
+      - "traefik.http.routers.bull-board-${COMPOSE_PROJECT_NAME}.rule=Host(`${SUBDOMAIN_QUEUES:-queues}.${CLIENT_DOMAIN}`)"
+      - "traefik.http.routers.bull-board-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.routers.bull-board-${COMPOSE_PROJECT_NAME}.tls=true"
+      - "traefik.http.routers.bull-board-${COMPOSE_PROJECT_NAME}.tls.certresolver=${CERT_RESOLVER:-local-acme}"
+      - "traefik.http.services.bull-board-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=3000"
+
+networks:
+  global-transit-network:
+    external: true
+  private-network:
+    name: private-network-${COMPOSE_PROJECT_NAME}
+
+volumes:
+  mysql-data:
+  postgres-data:
+  mongo-data:
+  redis-data:
+  mailpit-data:
+  dbgate-data:
+  minio-data:
+  evolution-instances:
+  evolution-store:
+  redisinsight-data:
