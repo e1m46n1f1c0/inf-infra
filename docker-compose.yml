@@ -41,11 +41,7 @@ services:
       - ./letsencrypt:/letsencrypt
     networks:
       global-transit-network: {}
-      private-network:
-        aliases:
-          - ${CLIENT_DOMAIN}
-          - login.${CLIENT_DOMAIN}
-          - app.${CLIENT_DOMAIN}
+      private-network: {}
     labels:
       - "traefik.enable=true"
       - "traefik.tier=global" # Se anuncia al líder global
@@ -113,7 +109,7 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.21
-    profiles: ["local", "dev", "tools", "mail"]
+    profiles: [ "local", "dev", "tools", "mail" ]
     container_name: ${COMPOSE_PROJECT_NAME}-mailpit
     restart: always
     environment:
@@ -134,12 +130,10 @@ services:
 
   dbgate:
     image: dbgate/dbgate:latest
-    profiles: ["local", "dev", "tools", "dbgate"]
+    profiles: [ "local", "dev", "tools", "dbgate" ]
     container_name: ${COMPOSE_PROJECT_NAME}-dbgate
     restart: always
     environment:
-      LOGIN_USERNAME: "${DBGATE_USER:-admin}"
-      LOGIN_PASSWORD: "${DBGATE_PASSWORD:-admin123}"
       CONNECTIONS: mysql,mongodb,redis,postgres
       LABEL_mysql: "MySQL Local"
       SERVER_mysql: "mysql"
@@ -179,7 +173,7 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
-    profiles: ["local", "dev", "s3", "minio"]
+    profiles: [ "local", "dev", "s3", "minio" ]
     container_name: ${COMPOSE_PROJECT_NAME}-minio
     restart: always
     command: server /data --console-address ":9001"
@@ -208,7 +202,7 @@ services:
 
   evolution-api:
     image: evoapicloud/evolution-api:latest
-    profiles: ["local", "dev", "whatsapp", "evolution"]
+    profiles: [ "local", "dev", "whatsapp", "evolution" ]
     container_name: ${COMPOSE_PROJECT_NAME}-evolution-api
     restart: always
     environment:
@@ -246,7 +240,7 @@ services:
 
   centrifugo:
     image: centrifugo/centrifugo:v5
-    profiles: ["local", "dev", "realtime", "centrifugo"]
+    profiles: [ "local", "dev", "realtime", "centrifugo" ]
     container_name: ${COMPOSE_PROJECT_NAME}-centrifugo
     restart: always
     environment:
@@ -277,7 +271,7 @@ services:
 
   redisinsight:
     image: redis/redisinsight:latest
-    profiles: ["local", "dev", "tools", "redisinsight", "redis-ui"]
+    profiles: [ "local", "dev", "tools", "redisinsight", "redis-ui" ]
     container_name: ${COMPOSE_PROJECT_NAME}-redisinsight
     restart: always
     volumes:
@@ -295,7 +289,7 @@ services:
 
   bull-board:
     image: node:20-alpine
-    profiles: ["local", "dev", "tools", "bullboard", "queues"]
+    profiles: [ "local", "dev", "tools", "bullboard", "queues" ]
     container_name: ${COMPOSE_PROJECT_NAME}-bull-board
     restart: always
     command: npx -y @bull-board/cli --redis redis://:${REDIS_PASSWORD:-demo}@redis:6379 --host 0.0.0.0 --port 3000 --no-open
