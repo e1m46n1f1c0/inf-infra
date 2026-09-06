@@ -51,8 +51,9 @@ services:
       - "traefik.tier=global" # Se anuncia al líder global
       # Router HTTP (Puerto 80) para tráfico/redirección (Dominio raíz y subdominios clientes)
       - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.rule=(Host(`${CLIENT_DOMAIN}`) || HostRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)) && !Host(`obs.${CLIENT_DOMAIN}`) && !Host(`secrets.${CLIENT_DOMAIN}`) && !Host(`traefik.${CLIENT_DOMAIN}`)"
-      - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.entrypoints=web"
-      - "traefik.http.services.router-http-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=80"
+      - "traefik.http.routers.router-http-${COMPOSE_PROJECT_NAME}.entrypoints=web,websecure"
+      - "traefik.http.services.router-http-${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=443"
+      - "traefik.http.services.router-http-${COMPOSE_PROJECT_NAME}.loadbalancer.server.scheme=https"
       # Router TCP TLS Passthrough (Puerto 443) para pasar TLS sin descifrar hacia traefik-internal
       - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.rule=(HostSNI(`${CLIENT_DOMAIN}`) || HostSNIRegexp(`^[a-z0-9-]+\\.${CLIENT_DOMAIN}$`)) && !HostSNI(`obs.${CLIENT_DOMAIN}`) && !HostSNI(`secrets.${CLIENT_DOMAIN}`) && !HostSNI(`traefik.${CLIENT_DOMAIN}`)"
       - "traefik.tcp.routers.router-https-${COMPOSE_PROJECT_NAME}.entrypoints=websecure"
@@ -140,7 +141,7 @@ services:
       CONNECTIONS: mysql,mongodb,redis,postgres
       LABEL_mysql: "MySQL Local"
       SERVER_mysql: "mysql"
-      USER_mysql: "dbadmin"
+      USER_mysql: "${DB_ROOT_USER:-root}"
       PASSWORD_mysql: "${DB_ROOT_PASSWORD:-root_password}"
       PORT_mysql: "3306"
       ENGINE_mysql: "mysql@dbgate-plugin-mysql"
